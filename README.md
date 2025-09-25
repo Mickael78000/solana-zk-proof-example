@@ -326,6 +326,54 @@ e(A, B) · e(L, γ) · e(C, δ) · e(-α, β)^-1
 ```
 If this equals 1, it means the original equation holds, and the proof is valid.
 
+### New: Enhanced Balance Verification Features
+
+The program now includes enhanced account balance verification functionality integrated with ZK proof verification:
+
+#### Available Instructions:
+
+1. **VerifyProof**: Standard ZK proof verification only
+2. **VerifyProofWithBalance**: Combined instruction that verifies both ZK proof and account balance in one atomic transaction
+
+#### Example Usage:
+
+```rust
+// Standard proof verification
+let instruction = ProgramInstruction::VerifyProof(verifier_prepared);
+
+// Combined proof and balance verification
+let instruction = ProgramInstruction::VerifyProofWithBalance {
+    proof_data: verifier_prepared,
+    required_balance: 500_000_000, // 0.5 SOL in lamports
+    account_to_check: user_account_pubkey,
+};
+```
+
+#### Balance Requirements:
+- **Configurable**: Set custom balance thresholds for different operations
+- **Atomic**: Both proof and balance verification must succeed for transaction completion
+- **Flexible**: Can specify any account to check (not just the signer)
+- **Error Handling**: Clear error messages for insufficient funds or invalid proofs
+
+#### Transaction Structure:
+```rust
+let instruction = Instruction::new_with_bytes(
+    program_id,
+    instruction_data.as_slice(),
+    vec![
+        AccountMeta::new(payer.pubkey(), true),           // Signer & fee payer
+        AccountMeta::new(target_account, false),          // Account to verify balance
+    ],
+);
+```
+
+#### Security Benefits:
+- **Prevents DoS**: Ensures accounts have funds before expensive proof verification
+- **Cost Management**: Users must have sufficient balance for transaction fees
+- **Resource Protection**: Prevents spam transactions that consume compute units
+- **Economic Security**: Adds financial stake to proof verification process
+- **Atomic Operations**: Both verifications must succeed or transaction fails completely
+
 Now we are all set! Let's take a look on how we might use this in a Solana program:
 
 ```rust
@@ -337,6 +385,11 @@ entrypoint!(process_instruction);
 #[derive(BorshSerialize, BorshDeserialize)]
 pub enum ProgramInstruction {
     VerifyProof(Groth16VerifierPrepared),
+    VerifyProofWithBalance {
+        proof_data: Groth16VerifierPrepared,
+        required_balance: u64,
+        account_to_check: Pubkey,
+    },
 }
 
 pub fn process_instruction(
@@ -350,6 +403,13 @@ pub fn process_instruction(
         ProgramInstruction::VerifyProof(proof_package) => {
             verify_proof(program_id, accounts, proof_package)
         }
+        ProgramInstruction::VerifyProofWithBalance {
+            proof_data,
+            required_balance,
+            account_to_check,
+        } => {
+            verify_proof_with_balance(program_id, accounts, proof_data, required_balance, account_to_check)
+        }
     }
 }
 
@@ -358,6 +418,35 @@ fn verify_proof(
     _accounts: &[AccountInfo],
     mut groth16_verifier_prepared: Groth16VerifierPrepared,
 ) -> ProgramResult {
+
+    let result = groth16_verifier_prepared
+        .verify()
+        .expect("Error deserializing verifier");
+
+    if result {
+        msg!("Proof is valid! Inputs verified.");
+        update_on_chain_state()?;
+        Ok(())
+    } else {
+        msg!("Proof is invalid!");
+        Err(ProgramError::InvalidAccountData.into())
+    }
+}
+
+fn verify_proof_with_balance(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    mut groth16_verifier_prepared: Groth16VerifierPrepared,
+    required_balance: u64,
+    account_to_check: Pubkey,
+) -> ProgramResult {
+    let account_to_check_info = accounts.iter().find(|account| account.key == &account_to_check).unwrap();
+    let account_balance = account_to_check_info.lamports;
+
+    if account_balance < required_balance {
+        msg!("Insufficient balance!");
+        return Err(ProgramError::InsufficientFunds.into());
+    }
 
     let result = groth16_verifier_prepared
         .verify()

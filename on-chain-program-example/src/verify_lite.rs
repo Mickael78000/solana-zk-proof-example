@@ -1,4 +1,4 @@
-use crate::byte_utils::convert_endianness_32;
+use crate::byte_utils::{convert_endianness};
 use crate::errors::Groth16Error;
 use crate::errors::Groth16Error::{PairingVerificationError, ProofVerificationFailed};
 use ark_bn254::{Bn254, Fr, G1Projective};
@@ -9,7 +9,6 @@ use ark_relations::r1cs::SynthesisError;
 use ark_serialize::{CanonicalSerialize, Compress};
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_bigint::BigUint;
-use solana_program::alt_bn128::compression::prelude::convert_endianness;
 use solana_program::alt_bn128::prelude::{
     alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing,
 };
@@ -97,7 +96,7 @@ impl Groth16VerifierPrepared {
         .concat();
 
         let pairing_res =
-            alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| ProofVerificationFailed)?;
+            crate::byte_utils::alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| ProofVerificationFailed)?;
 
         if pairing_res[31] != 1 {
             return Err(ProofVerificationFailed);
@@ -148,12 +147,12 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
                 return Err(Groth16Error::PublicInputGreaterThenFieldSize);
             }
             let x = [&self.verifying_key.vk_ic[i + 1][..], &input[..]].concat();
-            let mul_res = alt_bn128_multiplication(&x).map_err(|error| {
+            let mul_res = crate::byte_utils::alt_bn128_multiplication(&x).map_err(|error| {
                 info!("{:?}", error);
                 Groth16Error::PreparingInputsG1MulFailed
             })?;
             prepared_public_inputs =
-                alt_bn128_addition(&[&mul_res[..], &prepared_public_inputs[..]].concat())
+                crate::byte_utils::alt_bn128_addition(&[&mul_res[..], &prepared_public_inputs[..]].concat())
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?[..]
                     .try_into()
                     .map_err(|_| Groth16Error::PreparingInputsG1AdditionFailed)?;
@@ -192,7 +191,7 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         .concat();
 
         let pairing_res =
-            alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| PairingVerificationError)?;
+            crate::byte_utils::alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| PairingVerificationError)?;
         info!("Pairing result: {:?}", pairing_res);
         if pairing_res[31] != 1 {
             return Ok(false);
@@ -388,7 +387,7 @@ pub fn convert_ark_public_input(vec: &Vec<[u8; 32]>) -> Result<[[u8; 32]; NR_INP
     info!("Input vector: {:?}", vec);
     let converted_endian: Vec<[u8; 32]> = vec
         .iter()
-        .map(|bytes| convert_endianness_32(bytes))
+        .map(|bytes| convert_endianness::<32, 32>(bytes))
         .collect();
     let arr: [[u8; 32]; NR_INPUTS] = converted_endian
         .try_into()

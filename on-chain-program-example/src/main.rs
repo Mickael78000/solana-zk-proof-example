@@ -1,4 +1,3 @@
-
 #[tokio::main]
 async fn main() {}
 
@@ -38,6 +37,11 @@ mod test {
     #[derive(BorshSerialize, BorshDeserialize)]
     pub enum ProgramInstruction {
         VerifyProof(Groth16VerifierPrepared),
+        VerifyProofWithBalance {
+            proof_data: Groth16VerifierPrepared,
+            required_balance: u64,
+            account_to_check: Pubkey,
+        },
     }
 
     async fn request_airdrop(
