@@ -31,7 +31,7 @@ pub fn convert_endianness<const INPUT_SIZE: usize, const OUTPUT_SIZE: usize>(
 // Stub implementations for alt_bn128 functions (client-side only)
 // These would normally be provided by Solana's runtime
 
-pub fn alt_bn128_pairing(input: &[u8]) -> Result<[u8; 32], u32> {
+pub fn alt_bn128_pairing(_input: &[u8]) -> Result<[u8; 32], u32> {
     // This is a stub implementation
     // In a real implementation, this would call the actual pairing function
     // For now, return a successful result with the expected output format

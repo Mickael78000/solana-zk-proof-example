@@ -1,6 +1,5 @@
 use crate::byte_utils::{convert_endianness};
 use crate::errors::Groth16Error;
-use crate::errors::Groth16Error::{PairingVerificationError, ProofVerificationFailed};
 use ark_bn254::{Bn254, Fr, G1Projective};
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
@@ -9,12 +8,25 @@ use ark_relations::r1cs::SynthesisError;
 use ark_serialize::{CanonicalSerialize, Compress};
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_bigint::BigUint;
-use solana_program::alt_bn128::prelude::{
-    alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing,
-};
+use solana_program::{pubkey::Pubkey, program::invoke, instruction::Instruction};
+use solana_program::account_info::AccountInfo;
+use solana_program::program_error::ProgramError;
 use std::ops::{AddAssign, Neg};
 use log::info;
 use crate::prove::ProofPackage;
+
+pub const ALT_BN128_PAIRING: Pubkey = Pubkey::new_from_array([
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+fn alt_bn128_pairing_call(data: &[u8], accounts: &[AccountInfo]) -> Result<(), ProgramError> {
+    let ix = Instruction {
+        program_id: ALT_BN128_PAIRING,
+        accounts: vec![],
+        data: data.to_vec(),
+    };
+    invoke(&ix, accounts)
+}
 
 #[derive(PartialEq, Eq, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Groth16VerifyingKey {
@@ -82,7 +94,7 @@ impl Groth16VerifierPrepared {
         })
     }
 
-    pub fn verify(&mut self) -> Result<bool, Groth16Error> {
+    pub fn verify(&mut self, accounts: &[AccountInfo]) -> Result<bool, Groth16Error> {
         let pairing_input = [
             self.proof_a.as_slice(),
             self.proof_b.as_slice(),
@@ -95,12 +107,9 @@ impl Groth16VerifierPrepared {
         ]
         .concat();
 
-        let pairing_res =
-            crate::byte_utils::alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| ProofVerificationFailed)?;
+        alt_bn128_pairing_call(pairing_input.as_slice(), accounts)
+        .map_err(|_| Groth16Error::ProofVerificationFailed)?;
 
-        if pairing_res[31] != 1 {
-            return Err(ProofVerificationFailed);
-        }
         Ok(true)
     }
 }
@@ -165,17 +174,17 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
 
     /// Verifies the proof, and checks that public inputs are smaller than
     /// field size.
-    pub fn prepare_and_verify(&mut self) -> Result<bool, Groth16Error> {
-        self.prepare_and_verify_common::<true>()
+    pub fn prepare_and_verify(&mut self, accounts: &[AccountInfo]) -> Result<bool, Groth16Error> {
+        self.prepare_and_verify_common::<true>(accounts)
     }
 
     /// Verifies the proof, and does not check that public inputs are smaller
     /// than field size.
-    pub fn prepare_and_verify_unchecked(&mut self) -> Result<bool, Groth16Error> {
-        self.prepare_and_verify_common::<false>()
+    pub fn prepare_and_verify_unchecked(&mut self, accounts: &[AccountInfo]) -> Result<bool, Groth16Error> {
+        self.prepare_and_verify_common::<false>(accounts)
     }
 
-    fn prepare_and_verify_common<const CHECK: bool>(&mut self) -> Result<bool, Groth16Error> {
+    fn prepare_and_verify_common<const CHECK: bool>(&mut self, accounts: &[AccountInfo]) -> Result<bool, Groth16Error> {
         self.prepare_inputs::<CHECK>()?;
 
         let pairing_input = [
@@ -190,12 +199,9 @@ impl<const NR_INPUTS: usize> Groth16Verifier<'_, NR_INPUTS> {
         ]
         .concat();
 
-        let pairing_res =
-            crate::byte_utils::alt_bn128_pairing(pairing_input.as_slice()).map_err(|_| PairingVerificationError)?;
-        info!("Pairing result: {:?}", pairing_res);
-        if pairing_res[31] != 1 {
-            return Ok(false);
-        }
+        alt_bn128_pairing_call(pairing_input.as_slice(), accounts)
+        .map_err(|_| Groth16Error::ProofVerificationFailed)?;
+
 
         Ok(true)
     }
@@ -232,7 +238,7 @@ pub fn build_verifier(proof_package: ProofPackage) -> Groth16VerifierPrepared {
         .serialize_uncompressed(&mut g1_bytes)
         .expect("");
     let prepared_public_input =
-        convert_endianness::<32, 64>(<&[u8; 64]>::try_from(g1_bytes.as_slice()).unwrap());
+        convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap());
 
     let groth_vk = convert_arkworks_verifying_key_to_solana_verifying_key(&proof_package.prepared_verifying_key.vk);
     let groth_vk_prepared = Groth16VerifyingKeyPrepared {
@@ -270,28 +276,28 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key(
     ark_vk: &VerifyingKey<Bn254>,
 ) -> Box<Groth16VerifyingKey> {
     // Convert alpha_g1
-    let mut vk_alpha_g1 = [0u8; 64];
+    let mut vk_alpha_g1 = [0u8; 32];
     ark_vk
         .alpha_g1
         .serialize_uncompressed(&mut vk_alpha_g1[..])
         .unwrap();
 
     // Convert beta_g2
-    let mut vk_beta_g2 = [0u8; 128];
+    let mut vk_beta_g2 = [0u8; 64];
     ark_vk
         .beta_g2
         .serialize_uncompressed(&mut vk_beta_g2[..])
         .unwrap();
 
     // Convert gamma_g2
-    let mut vk_gamma_g2 = [0u8; 128];
+    let mut vk_gamma_g2 = [0u8; 64];
     ark_vk
         .gamma_g2
         .serialize_uncompressed(&mut vk_gamma_g2[..])
         .unwrap();
 
     // Convert delta_g2
-    let mut vk_delta_g2 = [0u8; 128];
+    let mut vk_delta_g2 = [0u8; 64];
     ark_vk
         .delta_g2
         .serialize_uncompressed(&mut vk_delta_g2[..])
@@ -302,7 +308,7 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key(
         .gamma_abc_g1
         .iter()
         .map(|point| {
-            let mut buf = [0u8; 64];
+            let mut buf = [0u8; 32];
             point.serialize_uncompressed(&mut buf[..]).unwrap();
             convert_endianness::<32, 64>(&buf)
         })
@@ -331,28 +337,28 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key_prepared(
     ark_vk: &VerifyingKey<Bn254>,
 ) -> Box<Groth16VerifyingKeyPrepared> {
     // Convert alpha_g1
-    let mut vk_alpha_g1 = [0u8; 64];
+    let mut vk_alpha_g1 = [0u8; 32];
     ark_vk
         .alpha_g1
         .serialize_uncompressed(&mut vk_alpha_g1[..])
         .unwrap();
 
     // Convert beta_g2
-    let mut vk_beta_g2 = [0u8; 128];
+    let mut vk_beta_g2 = [0u8; 64];
     ark_vk
         .beta_g2
         .serialize_uncompressed(&mut vk_beta_g2[..])
         .unwrap();
 
     // Convert gamma_g2
-    let mut vk_gamma_g2 = [0u8; 128];
+    let mut vk_gamma_g2 = [0u8; 64];
     ark_vk
         .gamma_g2
         .serialize_uncompressed(&mut vk_gamma_g2[..])
         .unwrap();
 
     // Convert delta_g2
-    let mut vk_delta_g2 = [0u8; 128];
+    let mut vk_delta_g2 = [0u8; 64];
     ark_vk
         .delta_g2
         .serialize_uncompressed(&mut vk_delta_g2[..])

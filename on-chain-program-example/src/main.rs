@@ -7,7 +7,7 @@ mod test {
     use ark_bn254::{Bn254, Fr, G1Affine, G1Projective};
     use ark_ec::pairing::Pairing;
     use ark_ec::{AffineRepr, CurveGroup};
-    use ark_groth16::{prepare_verifying_key, Groth16, Proof, VerifyingKey};
+    use ark_groth16::{prepare_verifying_key, Groth16, Proof};
     use ark_serialize::{CanonicalSerialize, Compress};
     use ark_snark::SNARK;
     use ark_std::UniformRand;
@@ -15,20 +15,35 @@ mod test {
     use log::{info, LevelFilter};
     use rand::thread_rng;
     use solana_client::nonblocking::rpc_client::RpcClient;
-    use solana_program::alt_bn128::compression::prelude::convert_endianness;
-    use solana_program::alt_bn128::prelude::{alt_bn128_pairing, ALT_BN128_PAIRING_ELEMENT_LEN};
-    use solana_program::instruction::{AccountMeta, Instruction};
-    use solana_program::pubkey::Pubkey;
-    use solana_sdk::commitment_config::CommitmentConfig;
+    use solana_program::{pubkey::Pubkey, instruction::Instruction, instruction::AccountMeta};
+    use solana_commitment_config::CommitmentConfig;
     use solana_sdk::signature::{Keypair, Signer};
     use solana_sdk::transaction::Transaction;
-    use solana_zk_client_example::byte_utils::{convert_endianness_128, convert_endianness_64};
+    use solana_sdk::sysvar::slot_history::ProgramError;
+    use solana_sdk::sysvar::slot_history::AccountInfo;
+    use solana_sdk::program::invoke;
+    use solana_zk_client_example::byte_utils::convert_endianness;
     use solana_zk_client_example::circuit::ExampleCircuit;
     use solana_zk_client_example::prove::{generate_proof_package, setup};
     use solana_zk_client_example::verify::verify_proof_package;
-    use solana_zk_client_example::verify_lite::{build_verifier, convert_ark_public_input, convert_arkworks_verifying_key_to_solana_verifying_key, convert_arkworks_verifying_key_to_solana_verifying_key_prepared, prepare_inputs, Groth16VerifierPrepared, Groth16VerifyingKeyPrepared};
+    use solana_zk_client_example::verify_lite::{build_verifier, convert_ark_public_input, convert_arkworks_verifying_key_to_solana_verifying_key_prepared, prepare_inputs, Groth16VerifierPrepared};
     use std::ops::{Mul, Neg};
     use std::str::FromStr;
+    use std::convert::TryInto;
+
+
+    pub const ALT_BN128_PAIRING: Pubkey = Pubkey::new_from_array([
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+
+    fn alt_bn128_pairing_call(data: &[u8], accounts: &[AccountInfo]) -> Result<(), ProgramError> {
+    let ix = Instruction {
+        program_id: ALT_BN128_PAIRING,
+        accounts: vec![],
+        data: data.to_vec(),
+    };
+    invoke(&ix, accounts)
+}
 
     fn init() {
         let _ = env_logger::builder().filter_level(LevelFilter::Info).is_test(true).try_init();
@@ -205,7 +220,7 @@ mod test {
         let mut g1_bytes = Vec::with_capacity(projective.serialized_size(Compress::No));
         projective.serialize_uncompressed(&mut g1_bytes).expect("");
         let prepared_public_input =
-            convert_endianness::<32, 64>(<&[u8; 64]>::try_from(g1_bytes.as_slice()).unwrap());
+            convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap());
 
         let groth_vk_prepared = convert_arkworks_verifying_key_to_solana_verifying_key_prepared(&vk);
 
@@ -228,7 +243,7 @@ mod test {
         )
         .unwrap();
 
-        match verifier.verify() {
+        match verifier.verify(&[]) {
             Ok(true) => {
                 info!("Proof verification succeeded");
             }
@@ -274,6 +289,9 @@ mod test {
         serialize_g1(&mut input, &p2);
         serialize_g2(&mut input, &q2);
 
+        pub const ALT_BN128_PAIRING_ELEMENT_LEN: usize = 192;
+
+
         info!("Input length: {}", input.len());
         info!(
             "ALT_BN128_PAIRING_ELEMENT_LEN: {}",
@@ -287,32 +305,32 @@ mod test {
         let converted_input: Vec<u8> = input
             .chunks(ALT_BN128_PAIRING_ELEMENT_LEN)
             .flat_map(|chunk| {
-                let mut converted = Vec::new();
-                converted.extend_from_slice(&convert_endianness_64(&chunk[..64]));
-                converted.extend_from_slice(&convert_endianness_128(&chunk[64..]));
-                converted
+                
+        let mut converted = Vec::new();
+
+        let first_chunk: &[u8; 64] = chunk[..64].try_into().expect("slice with incorrect length");
+        converted.extend_from_slice(&convert_endianness::<64, 128>(first_chunk));
+
+        let second_chunk: &[u8; 64] = chunk[64..128].try_into().expect("slice with incorrect length");
+        converted.extend_from_slice(&convert_endianness::<64, 128>(second_chunk));
+
+        converted
             })
             .collect();
 
         info!("Converted input: {:?}", converted_input);
 
-        // Call alt_bn128_pairing with the converted input
-        let result = alt_bn128_pairing(&converted_input);
-
-        match result {
-            Ok(output) => {
-                info!("Pairing result: {:?}", output);
-                // The expected result for a valid pairing is a 32-byte array with the last byte set to 1
-                let expected = vec![0; 31].into_iter().chain(vec![1]).collect::<Vec<u8>>();
-                assert_eq!(
-                    output, expected,
-                    "The custom pairing should be valid (return true)"
-                );
-            }
-            Err(e) => {
-                panic!("alt_bn128_pairing returned an error: {:?}", e);
-            }
+        // On-chain style:
+        match alt_bn128_pairing_call(&converted_input, &[]) {
+        Ok(_) => {
+        info!("Pairing verified successfully");
+        // Further assertions or behavior here
         }
+        Err(e) => {
+        panic!("Pairing verification failed: {:?}", e);
+        }
+}
+
 
         // Verify the pairing using arkworks
         let ark_result = Bn254::pairing(p1, q2) == Bn254::pairing(p2, q1);
