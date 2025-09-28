@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "programs/commit-reveal-dapp",
+    "proof-verify",
+    "dex-router/programs/dex-solana",
+    "integration-tests"
+]
+
+[workspace.dependencies]
+anchor-lang = "0.28.0"
+solana-program = "1.16.0"
