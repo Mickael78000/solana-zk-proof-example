@@ -52,6 +52,7 @@ pub fn setup<C: ConstraintSynthesizer<Fr>>(
         let mut file = File::create("vk.bin").unwrap();
         let mut vk_bytes = Vec::new();
         verifying_key
+                .serialize_uncompressed(&mut vk_bytes)
                 .expect("Failed to serialize verifying key (vk) to uncompressed bytes");
         file
             .write(&vk_bytes)

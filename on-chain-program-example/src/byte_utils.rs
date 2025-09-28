@@ -23,9 +23,9 @@ pub fn convert_endianness<const INPUT_SIZE: usize, const OUTPUT_SIZE: usize>(
     let copy_size = std::cmp::min(INPUT_SIZE, OUTPUT_SIZE);
     for i in 0..copy_size {
         output[i] = input[i].swap_bytes();
-    }
+    };
 
-    output
+    Ok(output) // Return the converted output
 }
 
 // Stub implementations for alt_bn128 functions (client-side only)

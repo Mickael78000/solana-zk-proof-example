@@ -3,6 +3,9 @@ use ark_bn254::Fr;
 use ark_relations::lc;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable};
 use thiserror::Error;
+use ark_ff::Zero;
+use ark_ff::One;
+use ark_ff::PrimeField;
 
 
 
@@ -44,8 +47,6 @@ impl ExampleCircuit {
     }
 
     pub fn public_inputs(&self) -> Result<Vec<[u8; 32]>, CircuitError> {
-        self.some_value
-            .map(|v| vec![field_to_bytes(v)])
             match (self.prover_value, self.verifier_value) {
             (Some(x), Some(y)) => Ok(vec![field_to_bytes(x), field_to_bytes(y)]),
             _ => Err(CircuitError::MissingAssignment)
@@ -98,7 +99,7 @@ impl ConstraintSynthesizer<Fr> for ExampleCircuit {
         if self.range_check {
             // Range check D to ensure 0 ≤ D < 2^32 (proving X ≥ Y)
             let mut cur = d_var;
-            let mut acc = Fr::zero();
+            let mut acc = Fr::is_zero(/* &ark_ff::Fp<MontBackend<FrConfig, 4>, 4> */);
             
             for i in 0..32 {
                 // Create binary variable

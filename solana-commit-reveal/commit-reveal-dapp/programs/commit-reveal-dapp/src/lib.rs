@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use sha2::{_Sha256, _Digest};
+// use sha2::{_Sha256, _Digest};
 
 declare_id!("6SVZnwSz6xkgK8AnK3JWNgj5Yn5fqC7tjZM1qwit7rER");
 

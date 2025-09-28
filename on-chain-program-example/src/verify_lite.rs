@@ -226,10 +226,10 @@ pub fn build_verifier(proof_package: ProofPackage) -> Groth16VerifierPrepared {
         .serialize_uncompressed(&mut proof_bytes)
         .expect("Error serializing proof");
 
-    let proof_a: [u8; 64] = convert_endianness::<32, 64>(proof_bytes[0..64].try_into().unwrap());
+    let proof_a: [u8; 64] = convert_endianness::<32, 64>(proof_bytes[0..64].try_into().unwrap()).expect("REASON");
     let proof_b: [u8; 128] =
-        convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap());
-    let proof_c: [u8; 64] = convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap());
+        convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap()).expect("REASON");
+    let proof_c: [u8; 64] = convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap()).expect("REASON");
 
     let mut g1_bytes =
         Vec::with_capacity(proof_package.public_inputs.serialized_size(Compress::No));
@@ -238,7 +238,7 @@ pub fn build_verifier(proof_package: ProofPackage) -> Groth16VerifierPrepared {
         .serialize_uncompressed(&mut g1_bytes)
         .expect("");
     let prepared_public_input =
-        convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap());
+        convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap()).expect("REASON");
 
     let groth_vk = convert_arkworks_verifying_key_to_solana_verifying_key(&proof_package.prepared_verifying_key.vk);
     let groth_vk_prepared = Groth16VerifyingKeyPrepared {
@@ -310,7 +310,7 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key(
         .map(|point| {
             let mut buf = [0u8; 32];
             point.serialize_uncompressed(&mut buf[..]).unwrap();
-            convert_endianness::<32, 64>(&buf)
+            convert_endianness::<32, 64>(&buf).unwrap()
         })
         .collect();
 
@@ -324,10 +324,10 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key(
 
     Box::new(Groth16VerifyingKey {
         number_public_inputs: 2, // Subtract 1 for the constant term
-        vk_alpha_g1: vk_alpha_g1_converted,
-        vk_beta_g2: vk_beta_g2_converted,
-        vk_gamma_g2: vk_gamma_g2_converted,
-        vk_delta_g2: vk_delta_g2_converted,
+        vk_alpha_g1: vk_alpha_g1_converted.expect("REASON"),
+        vk_beta_g2: vk_beta_g2_converted.expect("REASON"),
+        vk_gamma_g2: vk_gamma_g2_converted.expect("REASON"),
+        vk_delta_g2: vk_delta_g2_converted.expect("REASON"),
         vk_ic: vk_ic.into_boxed_slice(), // Convert to 'static lifetime
     })
 }
@@ -373,10 +373,10 @@ pub fn convert_arkworks_verifying_key_to_solana_verifying_key_prepared(
     info!("VK Alpha G1 (after conversion): {:?}", vk_alpha_g1);
 
     Box::new(Groth16VerifyingKeyPrepared {
-        vk_alpha_g1: vk_alpha_g1_converted,
-        vk_beta_g2: vk_beta_g2_converted,
-        vk_gamma_g2: vk_gamma_g2_converted,
-        vk_delta_g2: vk_delta_g2_converted,
+        vk_alpha_g1: vk_alpha_g1_converted.expect("REASON"),
+        vk_beta_g2: vk_beta_g2_converted.expect("REASON"),
+        vk_gamma_g2: vk_gamma_g2_converted.expect("REASON"),
+        vk_delta_g2: vk_delta_g2_converted.expect("REASON"),
     })
 }
 
@@ -393,7 +393,7 @@ pub fn convert_ark_public_input(vec: &Vec<[u8; 32]>) -> Result<[[u8; 32]; NR_INP
     info!("Input vector: {:?}", vec);
     let converted_endian: Vec<[u8; 32]> = vec
         .iter()
-        .map(|bytes| convert_endianness::<32, 32>(bytes))
+        .map(|bytes| convert_endianness::<32, 32>(bytes).unwrap())
         .collect();
     let arr: [[u8; 32]; NR_INPUTS] = converted_endian
         .try_into()
