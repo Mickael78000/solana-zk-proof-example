@@ -19,4 +19,6 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = "0.31.1"
+sha2 = "0.10.8"
+
 

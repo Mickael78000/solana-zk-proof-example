@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { CommitRevealDapp } from "../target/types/commit_reveal_dapp";
+import { CommitRevealDapp } from "../../solana-commit-reveal/commit-reveal-dapp/target/types/commit_reveal_dapp";
 import { expect } from "chai";
 import { createHash } from "crypto";
 
@@ -34,9 +34,7 @@ describe("commit-reveal", () => {
     await program.methods
       .initializeState(new anchor.BN(commitDeadline), new anchor.BN(revealDeadline))
       .accounts({
-        state: stateAccount,
         authority: provider.wallet.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
 
@@ -68,12 +66,9 @@ describe("commit-reveal", () => {
     );
     
     await program.methods
-      .commitOrder(Array.from(commitmentHash), commitmentIndex, null)
+      .commitOrder(Buffer.from(commitmentHash), commitmentIndex, null as any)
       .accounts({
-        commitment: commitmentAccount,
-        state: stateAccount,
         user: user.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
       })
       .signers([user])
       .rpc();

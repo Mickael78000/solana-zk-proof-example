@@ -3,58 +3,67 @@ use sha2::{Sha256, Digest};
 
 declare_id!("6SVZnwSz6xkgK8AnK3JWNgj5Yn5fqC7tjZM1qwit7rER");
 
-// Initialize global state
-#[derive(Accounts)]
-pub struct InitializeState<'info> {
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + 8 + 8 + 32 + 1,
-        seeds = [b"state"],
-        bump
-    )]
-    pub state: Account<'info, CommitRevealState>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
+#[program]
+pub mod commit_reveal_dapp {
+    use super::*;
 
-// Commit context with validation
-#[derive(Accounts)]
-#[instruction(commitment_index: u64)]
-pub struct CommitOrder<'info> {
-    #[account(
-        init,
-        payer = user,
-        space = 8 + 32 + 8 + 1 + 32 + 1 + 8,
-        seeds = [b"commitment", user.key().as_ref(), &commitment_index.to_le_bytes()],
-        bump
-    )]
-    pub commitment: Account<'info, Commitment>,
-    #[account(
-        constraint = state.commit_deadline > Clock::get()?.unix_timestamp @ CommitRevealError::CommitPhaseClosed,
-        constraint = !state.paused @ CommitRevealError::ProgramPaused
-    )]
-    pub state: Account<'info, CommitRevealState>,
-    #[account(mut)]
-    pub user: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
+    pub fn initialize_state(ctx: Context<InitializeState>, commit_deadline: i64, reveal_deadline: i64) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        state.commit_deadline = commit_deadline;
+        state.reveal_deadline = reveal_deadline;
+        state.authority = ctx.accounts.authority.key();
+        state.paused = false;
+        emit!(StateInitialized { authority: state.authority, commit_deadline, reveal_deadline });
+        Ok(())
+    }
 
-// Reveal context with validation
-#[derive(Accounts)]
-pub struct RevealOrder<'info> {
-    #[account(
-        mut,
-        constraint = commitment.user == *user.key,
-        constraint = !commitment.revealed @ CommitRevealError::AlreadyRevealed,
-        constraint = Clock::get()?.unix_timestamp > state.commit_deadline @ CommitRevealError::RevealNotStarted,
-        constraint = Clock::get()?.unix_timestamp < state.reveal_deadline @ CommitRevealError::RevealPhaseClosed
-    )]
-    pub commitment: Account<'info, Commitment>,
-    pub state: Account<'info, CommitRevealState>,
-    #[account(mut)]
-    pub user: Signer<'info>,
+    pub fn commit_order(
+        ctx: Context<CommitOrder>,
+        commitment_hash: Vec<u8>,
+        commitment_index: u64,
+        _zk_proof: Option<Vec<u8>>,
+    ) -> Result<()> {
+        require_eq!(commitment_hash.len(), 32, CommitRevealError::InvalidReveal);
+        let mut hash_arr = [0u8; 32];
+        hash_arr.copy_from_slice(&commitment_hash);
+
+        let commitment = &mut ctx.accounts.commitment;
+        commitment.commitment_hash = hash_arr;
+        commitment.commit_time = Clock::get()?.unix_timestamp;
+        commitment.revealed = false;
+        commitment.user = ctx.accounts.user.key();
+        commitment.zk_proof_verified = false;
+        commitment.commitment_index = commitment_index;
+
+        emit!(OrderCommitted {
+            user: commitment.user,
+            commitment_hash: commitment.commitment_hash,
+            timestamp: commitment.commit_time,
+            commitment_account: ctx.accounts.commitment.key(),
+            commitment_index,
+        });
+        Ok(())
+    }
+
+    pub fn reveal_order(ctx: Context<RevealOrder>, order_data: Vec<u8>, secret: Vec<u8>) -> Result<()> {
+        let mut data = order_data.clone();
+        data.extend_from_slice(&secret);
+        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        hasher.update(&data);
+        let computed = hasher.finalize();
+        require!(computed.as_slice() == ctx.accounts.commitment.commitment_hash, CommitRevealError::InvalidReveal);
+
+        let commitment = &mut ctx.accounts.commitment;
+        commitment.revealed = true;
+        emit!(OrderRevealed {
+            user: commitment.user,
+            commitment_account: ctx.accounts.commitment.key(),
+            revealed_data: order_data,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        Ok(())
+    }
 }
 
 // Initialize global state
