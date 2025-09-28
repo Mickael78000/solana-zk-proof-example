@@ -15,10 +15,15 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
+custom-panic = []
+custom-heap = []
 
 
 [dependencies]
-anchor-lang = "0.31.1"
+anchor-lang = { workspace = true }
 sha2 = "0.10.8"
+solana-program = { workspace = true }
+borsh = { workspace = true }
 
 

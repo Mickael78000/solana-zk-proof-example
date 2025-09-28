@@ -1,11 +1,17 @@
 [workspace]
 members = [
-    "programs/commit-reveal-dapp",
+     "solana-commit-reveal/commit-reveal-dapp/programs/commit-reveal-dapp",
     "proof-verify",
     "dex-router/programs/dex-solana",
-    "integration-tests"
+    "integration-tests",
+    "on-chain-program-example"
 ]
+resolver = "2"
 
 [workspace.dependencies]
-anchor-lang = "0.28.0"
-solana-program = "1.16.0"
+anchor-lang = "0.31.1"
+solana-program = "3.0.0"
+borsh = { version = "1.5.1", features = ["derive"] }
+ark-bn254 = "0.4.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.0"
