@@ -42,15 +42,20 @@ pub fn setup<C: ConstraintSynthesizer<Fr>>(
     if save_keys {
         let mut pk_file = File::create("pk.bin").unwrap();
         let mut pk_bytes = Vec::new();
-        proving_key.serialize_uncompressed(&mut pk_bytes).expect("");
-        pk_file.write(&pk_bytes).expect("TODO: panic message");
+        proving_key
+            .serialize_uncompressed(&mut pk_bytes)
+            .expect("Failed to serialize proving key (pk) to uncompressed bytes");
+        pk_file
+            .write(&pk_bytes)
+            .expect("Failed to write proving key bytes to pk.bin");
 
         let mut file = File::create("vk.bin").unwrap();
         let mut vk_bytes = Vec::new();
         verifying_key
-            .serialize_uncompressed(&mut vk_bytes)
-            .expect("");
-        file.write(&vk_bytes).expect("TODO: panic message");
+                .expect("Failed to serialize verifying key (vk) to uncompressed bytes");
+        file
+            .write(&vk_bytes)
+            .expect("Failed to write verifying key bytes to vk.bin");
     };
 
     (proving_key, verifying_key)
@@ -76,7 +81,7 @@ pub fn generate_proof_package<C: ConstraintSynthesizer<Fr>>(
         .iter()
         .map(|input| bytes_to_field(input))
         .collect::<Result<Vec<Fr>, _>>()
-        .expect("");
+        .expect("Failed to convert public inputs bytes to field elements (Fr)");
 
     let prepared_verifying_key = prepare_verifying_key(&verifying_key);
 

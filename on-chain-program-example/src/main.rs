@@ -208,17 +208,24 @@ mod test {
         let proof_c: [u8; 64] =
             convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap());
 
-        let mut vk_bytes = Vec::with_capacity(vk.serialized_size(Compress::No));
-        vk.serialize_uncompressed(&mut vk_bytes).expect("");
-
-        let pvk = prepare_verifying_key(&vk);
-        let mut pvk_bytes = Vec::with_capacity(pvk.serialized_size(Compress::No));
-        pvk.serialize_uncompressed(&mut pvk_bytes).expect("");
-
-        let projective: G1Projective = prepare_inputs(&vk, &[Fr::from(100)])
-            .expect("Error preparing inputs with public inputs and prepared verifying key");
-        let mut g1_bytes = Vec::with_capacity(projective.serialized_size(Compress::No));
-        projective.serialize_uncompressed(&mut g1_bytes).expect("");
+         let mut vk_bytes = Vec::with_capacity(vk.serialized_size(Compress::No));
+        vk
+            .serialize_uncompressed(&mut vk_bytes)
+            .expect("Failed to serialize verifying key (vk) to uncompressed bytes");
+ 
+         let pvk = prepare_verifying_key(&vk);
+         let mut pvk_bytes = Vec::with_capacity(pvk.serialized_size(Compress::No));
+        pvk
+            .serialize_uncompressed(&mut pvk_bytes)
+            .expect("Failed to serialize prepared verifying key (pvk) to uncompressed bytes");
+ 
+         let projective: G1Projective = prepare_inputs(&vk, &[Fr::from(100)])
+             .expect("Error preparing inputs with public inputs and prepared verifying key");
+         let mut g1_bytes = Vec::with_capacity(projective.serialized_size(Compress::No));
+        projective
+            .serialize_uncompressed(&mut g1_bytes)
+            .expect("Failed to serialize prepared public input (G1Projective) to uncompressed bytes");
+        
         let prepared_public_input =
             convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap());
 
@@ -343,23 +350,25 @@ mod test {
         info!("q2: {:?}", q2);
     }
 
-    fn serialize_g1(_output: &mut Vec<u8>, point: &G1Affine) {
-        let mut serialized = Vec::new();
-        point.serialize_uncompressed(&mut serialized).unwrap();
-
-        // Reverse bytes for each coordinate (32 bytes each for x and y)
-        // for chunk in serialized.chunks_exact(32) {
-        //     output.extend(chunk.iter().rev());
-        // }
+    fn serialize_g1(output: &mut Vec<u8>, point: &G1Affine) {
+        // Serialize G1 affine point as uncompressed bytes: x(32) || y(32)
+        let mut serialized = Vec::with_capacity(64);
+        point.serialize_uncompressed(&mut serialized).expect("G1 serialize_uncompressed failed");
+        // Expect 64 bytes for BN254 G1 affine (no flags in uncompressed form)
+        debug_assert_eq!(serialized.len(), 64, "Unexpected G1 uncompressed length: {}", serialized.len());
+        // Append as-is; downstream code will handle any endianness adjustments if required
+        output.extend_from_slice(&serialized);
     }
 
-    fn serialize_g2(_output: &mut Vec<u8>, point: &G2Affine) {
-        let mut serialized = Vec::new();
-        point.serialize_uncompressed(&mut serialized).unwrap();
-
-        // Reverse bytes for each coordinate (64 bytes each for x and y, as they are elements of Fp2)
-        // for chunk in serialized.chunks_exact(64) {
-        //     output.extend(chunk.iter().rev());
-        // }
+    fn serialize_g2(output: &mut Vec<u8>, point: &G2Affine) {
+        // Serialize G2 affine point as uncompressed bytes: x(64) || y(64) over Fp2
+        let mut serialized = Vec::with_capacity(128);
+        point
+            .serialize_uncompressed(&mut serialized)
+            .expect("G2 serialize_uncompressed failed");
+        // Expect 128 bytes for BN254 G2 affine (no flags in uncompressed form)
+        debug_assert_eq!(serialized.len(), 128, "Unexpected G2 uncompressed length: {}", serialized.len());
+        // Append as-is; downstream code will handle any endianness adjustments if required
+        output.extend_from_slice(&serialized);
     }
 }
