@@ -16,7 +16,7 @@ pub fn bytes_to_field<F: PrimeField>(bytes: &[u8]) -> Result<F, SerializationErr
 // Generic endianness conversion function
 pub fn convert_endianness<const INPUT_SIZE: usize, const OUTPUT_SIZE: usize>(
     input: &[u8; INPUT_SIZE],
-) -> [u8; OUTPUT_SIZE] {
+) -> Result<[u8; OUTPUT_SIZE], &'static str> {
     let mut output = [0u8; OUTPUT_SIZE];
 
     // Handle endianness conversion by swapping bytes

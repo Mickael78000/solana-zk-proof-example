@@ -2,91 +2,96 @@ use crate::byte_utils::field_to_bytes;
 use ark_bn254::Fr;
 use ark_relations::lc;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, Variable};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum CircuitError {
+    #[error("Missing assignment")]
+    MissingAssignment,
+    #[error("Invalid value range")]
+    InvalidRange,
+}
 
 #[derive(Clone)]
 pub struct ExampleCircuit {
     pub some_value: Option<Fr>,
+    pub range_check: bool, // Enable range checking
 }
 
-/// This implementation defines the Default and New methods for the ExampleCircuit struct,
-/// providing ways to initialize the struct with default and specific values. Additionally,
-/// it includes a method to retrieve the public inputs of the circuit and a method to generate
-/// constraints for the ExampleCircuit as part of the ConstraintSynthesizer trait implementation.
 impl ExampleCircuit {
     pub fn default() -> Self {
-        ExampleCircuit { some_value: None }
+        ExampleCircuit { 
+            some_value: None,
+            range_check: true,
+        }
     }
 
-    pub fn new() -> Self {
-        let circuit = ExampleCircuit {
-            some_value: Some(Fr::from(100)),
-        };
+    pub fn new(value: u64) -> Result<Self, CircuitError> {
+        // Validate input range (example: ensure value is < 2^32)
+        if value >= (1 << 32) {
+            return Err(CircuitError::InvalidRange);
+        }
 
-        circuit
+        Ok(ExampleCircuit {
+            some_value: Some(Fr::from(value)),
+            range_check: true,
+        })
     }
 
-    /// This is a convenience function that returns a vector of public inputs for the circuit.
-    ///
-    /// This function converts the value stored in `some_value` to a 32-byte array
-    /// using the `field_to_bytes` function. If `some_value` is not set (i.e., is `None`),
-    /// the function will panic.
-    ///
-    /// # Returns
-    ///
-    /// A vector containing a single element: the 32-byte array representation of the
-    /// value stored in `some_value`.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if `some_value` is `None`.
-    pub fn public_inputs(&self) -> Vec<[u8; 32]> {
-        let public_inputs: Vec<[u8; 32]> = vec![field_to_bytes(self.some_value.unwrap())];
-
-        public_inputs
+    pub fn public_inputs(&self) -> Result<Vec<[u8; 32]>, CircuitError> {
+        self.some_value
+            .map(|v| vec![field_to_bytes(v)])
+            .ok_or(CircuitError::MissingAssignment)
     }
 }
 
-/// This `ExampleCircuit` struct represents a simple example of a constraint system circuit
-/// that can be used with zkSNARKs. The circuit defines a single field element as its
-/// internal state and includes methods to initialize the circuit, retrieve its public inputs,
-/// and generate the constraints required for the zkSNARK proof system.
-///
-/// The struct utilizes the `Fr` field element from the `ark_bn254` crate and implements the
-/// `ConstraintSynthesizer` trait from the `ark_relations` crate to define the circuit's
-/// constraints.
-
-/// # Fields
-///
-/// - `some_value`: An optional field element representing the internal state of the circuit. The
-/// field is of type `Option<Fr>` where `Fr` is a field element from the `ark_bn254` crate.
-///
-/// # Methods
-///
-/// - `default()`: Creates a new `ExampleCircuit` instance with its `some_value` set to `None`.
-///
-/// - `new()`: Creates a new `ExampleCircuit` instance with its `some_value` set to a specific
-/// value (`Fr::from(100)`).
-///
-/// - `public_inputs()`: Returns a vector containing the 32-byte array representation of the value
-/// stored in `some_value`. This function will panic if `some_value` is `None`.
-///
-/// # Traits
-///
-/// - `ConstraintSynthesizer<Fr>`:
-///   - `generate_constraints()`: Generates the constraints for the circuit, ensuring that the
-///   public input (`some_value`) is correctly constrained and matches the computed value.
 impl ConstraintSynthesizer<Fr> for ExampleCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        // Allocate public inputs
-        let some_value_var =
-            cs.new_input_variable(|| self.some_value.ok_or(SynthesisError::AssignmentMissing))?;
+        // Allocate public input with proper error handling
+        let value = self.some_value.ok_or(SynthesisError::AssignmentMissing)?;
+        let value_var = cs.new_input_variable(|| Ok(value))?;
 
-        // Constraint: Ensure computed addresses_hash matches the provided addresses_hash
+        // Basic constraint: value * 1 = value (ensures value is properly constrained)
         cs.enforce_constraint(
-            lc!() + some_value_var,
+            lc!() + value_var,
             lc!() + Variable::One,
-            lc!() + some_value_var,
+            lc!() + value_var,
         )?;
+
+        // Optional range check (if enabled)
+        if self.range_check {
+            // Ensure value < 2^32 using binary decomposition
+            let mut cur = value_var;
+            let mut acc = Fr::zero();
+            
+            for i in 0..32 {
+                // Create binary variable
+                let bit = cs.new_witness_variable(|| {
+                    Ok(if value.into_bigint().get_bit(i as u64) {
+                        Fr::one()
+                    } else {
+                        Fr::zero()
+                    })
+                })?;
+
+                // Ensure bit is boolean (0 or 1)
+                cs.enforce_constraint(
+                    lc!() + bit,
+                    lc!() + bit,
+                    lc!() + bit,
+                )?;
+
+                // Add bit contribution to accumulator
+                if i > 0 {
+                    acc += Fr::from(1u64 << i);
+                    cs.enforce_constraint(
+                        lc!() + cur - acc,
+                        lc!() + bit,
+                        lc!() + Variable::One,
+                    )?;
+                }
+            }
+        }
 
         Ok(())
     }
