@@ -25,7 +25,7 @@ mod test {
     use solana_zk_client_example::byte_utils::convert_endianness;
     use solana_zk_client_example::circuit::ExampleCircuit;
     use solana_zk_client_example::prove::{generate_proof_package, setup};
-    use solana_zk_client_example::verify::verify_proof_package;
+    use solana_zk_client_example::prove::ProofPackage;
     use solana_zk_client_example::verify_lite::{build_verifier, convert_ark_public_input, convert_arkworks_verifying_key_to_solana_verifying_key_prepared, prepare_inputs, Groth16VerifierPrepared};
     use std::ops::{Mul, Neg};
     use std::str::FromStr;
@@ -79,11 +79,10 @@ mod test {
     #[tokio::test]
     async fn test_verify_off_chain() -> Result<(), Box<dyn std::error::Error>> {
         init();
-        let circuit = ExampleCircuit {
-            some_value: Some(Fr::from(100)),
-        };
+        // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
+        let circuit = ExampleCircuit::new(100, 50)?;
 
-        let public_inputs = circuit.public_inputs();
+        let public_inputs = circuit.public_inputs()?;
 
         let (proving_key, verifying_key) = setup(true, circuit.clone());
         let (_, _, proof_package) = generate_proof_package(
@@ -93,7 +92,7 @@ mod test {
             &public_inputs,
         );
 
-        let verify_groth16_proof_result = verify_proof_package(&proof_package);
+        let verify_groth16_proof_result = verify_proof_package(&proof_package)?;
 
         info!("{:?}", &verify_groth16_proof_result);
         Ok(())
@@ -118,11 +117,10 @@ mod test {
         let program_id = Pubkey::from_str("9PMYmoKdNk67c9Gumo8WWNFpGwmmHfZ4BvFR2rh1winq").unwrap(); // Replace with your actual program ID
 
         // Generate the proof
-        let circuit = ExampleCircuit {
-            some_value: Some(Fr::from(100)),
-        };
+        // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
+        let circuit = ExampleCircuit::new(100, 50)?;
 
-        let public_inputs = circuit.public_inputs();
+        let public_inputs = circuit.public_inputs()?;
         let (proving_key, verifying_key) = setup(true, circuit.clone());
         let (_, _, proof_package) = generate_proof_package(
             &proving_key,
@@ -163,19 +161,17 @@ mod test {
     }
 
     #[test]
-    fn should_verify_basic_circuit_groth16() {
+    fn should_verify_basic_circuit_groth16() -> Result<(), Box<dyn std::error::Error>> {
         init();
 
         let rng = &mut thread_rng();
-        let c = ExampleCircuit {
-            some_value: Some(Fr::from(100)),
-        };
+     
+        // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
+        let c = ExampleCircuit::new(100, 50)?;
 
         let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(c, rng).unwrap();
 
-        let c2 = ExampleCircuit {
-            some_value: Some(Fr::from(100)),
-        };
+        let c2 = ExampleCircuit::new(100, 50)?;
 
         let public_input = &c2.public_inputs();
 
@@ -204,9 +200,9 @@ mod test {
         let proof_a: [u8; 64] =
             convert_endianness::<32, 64>(proof_bytes[0..64].try_into().unwrap());
         let proof_b: [u8; 128] =
-            convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap());
+            convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap().expect("REASON"));
         let proof_c: [u8; 64] =
-            convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap());
+            convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap().expect("REASON"));
 
          let mut vk_bytes = Vec::with_capacity(vk.serialized_size(Compress::No));
         vk
@@ -227,9 +223,9 @@ mod test {
             .expect("Failed to serialize prepared public input (G1Projective) to uncompressed bytes");
         
         let prepared_public_input =
-            convert_endianness::<32, 64>(<&[u8; 32]>::try_from(g1_bytes.as_slice()).unwrap());
+            convert_endianness::<32, 64>(g1_bytes.as_slice()).unwrap();
 
-        let groth_vk_prepared = convert_arkworks_verifying_key_to_solana_verifying_key_prepared(&vk);
+        let groth16_vk_prepared = convert_arkworks_verifying_key_to_solana_verifying_key_prepared(&vk);
 
         let public_inputs = convert_ark_public_input(&public_input).unwrap();
 

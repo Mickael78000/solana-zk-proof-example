@@ -6,6 +6,7 @@ use thiserror::Error;
 use ark_ff::Zero;
 use ark_ff::One;
 use ark_ff::PrimeField;
+use ark_ff::BigInteger;
 
 
 
@@ -81,7 +82,7 @@ impl ConstraintSynthesizer<Fr> for ExampleCircuit {
 
         // Constrain neg_y_var = -Y
         cs.enforce_constraint(
-            lc!() + neg_one * y_var,
+            lc!() + (neg_one, y_var),
             lc!() + Variable::One,
             lc!() + neg_y_var,
         )?;
@@ -98,13 +99,14 @@ impl ConstraintSynthesizer<Fr> for ExampleCircuit {
         // Optional range check (if enabled)
         if self.range_check {
             // Range check D to ensure 0 ≤ D < 2^32 (proving X ≥ Y)
-            let mut cur = d_var;
-            let mut acc = Fr::is_zero(/* &ark_ff::Fp<MontBackend<FrConfig, 4>, 4> */);
+            // Ensure value < 2^32 using binary decomposition
+            let cur = d_var;
+            let mut acc_var = cs.new_witness_variable(|| Ok(Fr::zero()))?;
             
             for i in 0..32 {
                 // Create binary variable
                 let bit = cs.new_witness_variable(|| {
-                    Ok(if d.into_bigint().get_bit(i as u64) {
+                    Ok(if d.into_bigint().get_bit((i as u64).try_into().unwrap()) {
                         Fr::one()
                     } else {
                         Fr::zero()
@@ -120,13 +122,26 @@ impl ConstraintSynthesizer<Fr> for ExampleCircuit {
 
                 // Add bit contribution to accumulator
                 if i > 0 {
-                    acc += Fr::from(1u64 << i);
+                    let power = Fr::from(1u64 << i);
+                    let new_acc = cs.new_witness_variable(|| Ok(power))?;
+                    
+                    // Constrain new_acc = acc_var + power
                     cs.enforce_constraint(
-                        lc!() + cur - acc,
+                        lc!() + acc_var + (power, Variable::One),
+                        lc!() + Variable::One,
+                        lc!() + new_acc,
+                    )?;
+
+                    // Constrain the bit decomposition
+                    cs.enforce_constraint(
+                        lc!() + cur - new_acc,
                         lc!() + bit,
                         lc!() + Variable::One,
                     )?;
+
+                    acc_var = new_acc;
                 }
+            
             }
         }
 
@@ -141,7 +156,7 @@ mod tests {
     #[test]
     fn test_valid_inequality() {
         // X = 100, Y = 50, should pass since 100 ≥ 50
-        let circuit = ExampleCircuit::new(100).unwrap();
+        let circuit = ExampleCircuit::new(100,50).unwrap();
         let cs = ConstraintSystem::<Fr>::new_ref();
         assert!(circuit.generate_constraints(cs).is_ok());
     }
@@ -149,7 +164,7 @@ mod tests {
     #[test]
     fn test_invalid_inequality() {
         // X = 50, Y = 100, should fail since 50 ≱ 100
-        let circuit = ExampleCircuit::new(50).unwrap();
+        let circuit = ExampleCircuit::new(50,100).unwrap();
         let cs = ConstraintSystem::<Fr>::new_ref();
         // Constraints will be satisfied but range check will fail
         // since D = -50 won't decompose into 32 positive bits

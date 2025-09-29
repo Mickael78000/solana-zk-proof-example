@@ -1,7 +1,12 @@
-// use crate::prove::ProofPackage;
-// use ark_bn254::{Bn254, G1Projective};
-// use ark_groth16::{prepare_verifying_key, Groth16, Proof, VerifyingKey};
+#[allow(unused_imports)]
+use ark_bn254::{Bn254, G1Projective};
+#[allow(unused_imports)]
+use ark_groth16::{prepare_verifying_key, Groth16, Proof, VerifyingKey};
 use thiserror::Error;
+#[allow(unused_imports)]
+use crate::prove::ProofPackage;
+#[allow(unused_imports)]
+use ark_ec::CurveGroup; 
 
 #[derive(Error, Debug)]
 pub enum VerificationError {
@@ -16,6 +21,7 @@ pub enum VerificationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
     use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
     use ark_ec::AffineRepr;
     use ark_groth16::{Proof, VerifyingKey};
@@ -24,57 +30,62 @@ mod tests {
 
     fn generate_random_proof() -> Proof<Bn254> {
         let mut rng = thread_rng();
+    
         Proof {
             a: G1Affine::rand(&mut rng).into(),
             b: G2Affine::rand(&mut rng).into(),
             c: G1Affine::rand(&mut rng).into(),
         }
-// pub fn verify(
-//     proof: &Proof<Bn254>,
-//     public_inputs: &G1Projective,
-//     vk: &VerifyingKey<Bn254>,
-// ) -> Result<bool, VerificationError> {
-//     // Validate inputs
-//     if !is_valid_point(public_inputs) {
-//         return Err(VerificationError::InvalidPublicInput);
-//     }
+    }
     
-//     if !is_valid_proof(proof) {
-//         return Err(VerificationError::InvalidProof);
-//     }
+    pub fn verify(
+        proof: &Proof<Bn254>,
+        public_inputs: &G1Projective,
+        vk: &VerifyingKey<Bn254>,
+    ) -> Result<bool, VerificationError> {
+        // Validate inputs
+        if !is_valid_point(public_inputs) {
+            return Err(VerificationError::InvalidPublicInput);
+        }
+        
+        if !is_valid_proof(proof) {
+            return Err(VerificationError::InvalidProof);
+        }
 
-//     let pvk = prepare_verifying_key(vk);
-//     Groth16::<Bn254>::verify_proof_with_prepared_inputs(&pvk, proof, public_inputs)
-//         .map_err(|_| VerificationError::VerificationFailed)
-// }
+        let pvk = prepare_verifying_key(vk);
+        Groth16::<Bn254>::verify_proof_with_prepared_inputs(&pvk, proof, public_inputs)
+            .map_err(|_| VerificationError::VerificationFailed)
+    }
 
-// pub fn verify_proof_package(proof_package: &ProofPackage) -> Result<bool, VerificationError> {
-//     if !is_valid_proof(&proof_package.proof) {
-//         return Err(VerificationError::InvalidProof);
-//     }
+    #[allow(dead_code)]
+    pub fn verify_proof_package(proof_package: &ProofPackage) -> Result<bool, VerificationError> {
+        if !is_valid_proof(&proof_package.proof) {
+            return Err(VerificationError::InvalidProof);
+        }
 
-//     Groth16::<Bn254>::verify_proof_with_prepared_inputs(
-//         &proof_package.prepared_verifying_key,
-//         &proof_package.proof,
-//         &proof_package.public_inputs,
-//     )
-//     .map_err(|_| VerificationError::VerificationFailed)
-// }
+        Groth16::<Bn254>::verify_proof_with_prepared_inputs(
+            &proof_package.prepared_verifying_key,
+            &proof_package.proof,
+            &proof_package.public_inputs,
+        )
+        .map_err(|_| VerificationError::VerificationFailed)
+    }
 
-// fn is_valid_point(point: &G1Projective) -> bool {
-//     point.is_on_curve() && point.is_in_correct_subgroup_assuming_on_curve()
-// }
+    fn is_valid_point(point: &G1Projective) -> bool {
+        let affine = point.into_affine();
+    affine.is_on_curve() && affine.is_in_correct_subgroup_assuming_on_curve()
+    }
 
-// fn is_valid_proof(proof: &Proof<Bn254>) -> bool {
-//     // Validate each component of the proof is on curve and in correct subgroup
-//     proof.a.is_on_curve() && 
-//     proof.a.is_in_correct_subgroup_assuming_on_curve() &&
-//     proof.b.is_on_curve() && 
-//     proof.b.is_in_correct_subgroup_assuming_on_curve() &&
-//     proof.c.is_on_curve() && 
-//     proof.c.is_in_correct_subgroup_assuming_on_curve()
-// }
-   }
+    fn is_valid_proof(proof: &Proof<Bn254>) -> bool {
+        // Validate each component of the proof is on curve and in correct subgroup
+        proof.a.is_on_curve() && 
+        proof.a.is_in_correct_subgroup_assuming_on_curve() &&
+        proof.b.is_on_curve() && 
+        proof.b.is_in_correct_subgroup_assuming_on_curve() &&
+        proof.c.is_on_curve() && 
+        proof.c.is_in_correct_subgroup_assuming_on_curve()
+    }
+
 
     fn generate_invalid_proof() -> Proof<Bn254> {
         // Generate a proof with points not on the curve
