@@ -13,19 +13,36 @@ pub fn bytes_to_field<F: PrimeField>(bytes: &[u8]) -> Result<F, SerializationErr
     F::deserialize_uncompressed(bytes)
 }
 
-// Generic endianness conversion function
+// Generic endianness conversion function that operates on 32-bit chunks
 pub fn convert_endianness<const INPUT_SIZE: usize, const OUTPUT_SIZE: usize>(
     input: &[u8; INPUT_SIZE],
 ) -> Result<[u8; OUTPUT_SIZE], &'static str> {
+    if INPUT_SIZE % 4 != 0 || OUTPUT_SIZE % 4 != 0 {
+        return Err("Input and output sizes must be multiples of 4 bytes");
+    }
+
     let mut output = [0u8; OUTPUT_SIZE];
-
-    // Handle endianness conversion by swapping bytes
     let copy_size = std::cmp::min(INPUT_SIZE, OUTPUT_SIZE);
-    for i in 0..copy_size {
-        output[i] = input[i].swap_bytes();
-    };
+    
+    // Process 4 bytes at a time
+    for chunk in 0..(copy_size / 4) {
+        let start = chunk * 4;
+        let mut value = u32::from_le_bytes([
+            input[start],
+            input[start + 1],
+            input[start + 2],
+            input[start + 3],
+        ]);
+        
+        // Swap endianness of the 32-bit value
+        value = value.swap_bytes();
+        
+        // Convert back to bytes and copy to output
+        let bytes = value.to_be_bytes();
+        output[start..start + 4].copy_from_slice(&bytes);
+    }
 
-    Ok(output) // Return the converted output
+    Ok(output)
 }
 
 // Stub implementations for alt_bn128 functions (client-side only)

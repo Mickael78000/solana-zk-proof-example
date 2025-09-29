@@ -10,6 +10,49 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::thread_rng;
 use std::fs::File;
 use std::io::Write;
+use thiserror::Error;
+use ark_ff::{PrimeField, Field};
+
+#[derive(Error, Debug)]
+pub enum ProofError {
+    #[error("Invalid public input: {0}")]
+    InvalidPublicInput(String),
+    #[error("Invalid proving key")]
+    InvalidProvingKey,
+    #[error("Circuit validation failed")]
+    CircuitValidationFailed,
+    #[error("Proof generation failed")]
+    ProofGenerationFailed,
+}
+
+pub fn validate_public_input(input: &[u8; 32]) -> Result<Fr, ProofError> {
+    let field_element: Fr = bytes_to_field(input)
+        .map_err(|_| ProofError::InvalidPublicInput("Failed to convert bytes to field element".to_string()))?;
+    
+   // Check if the input is within valid field range
+    if field_element.into_bigint() >= Fr::MODULUS {
+        return Err(ProofError::InvalidPublicInput("Input exceeds field characteristic".to_string()));
+    }
+    
+    Ok(field_element)
+}
+
+pub fn validate_proving_key<C: ConstraintSynthesizer<Fr> + Clone>(
+    proving_key: &ProvingKey<Bn254>,
+    circuit: &C,
+) -> Result<(), ProofError> {
+    // Verify circuit constraints match proving key
+    let cs = ark_relations::r1cs::ConstraintSystem::<Fr>::new_ref();
+    circuit.clone().generate_constraints(cs.clone())
+        .map_err(|_| ProofError::CircuitValidationFailed)?;
+    
+    // The length of a_query corresponds to the number of constraints
+    if cs.num_constraints() != proving_key.a_query.len() {
+        return Err(ProofError::InvalidProvingKey);
+    }
+    
+    Ok(())
+}
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct ProofPackageLite {
@@ -62,12 +105,32 @@ pub fn setup<C: ConstraintSynthesizer<Fr>>(
     (proving_key, verifying_key)
 }
 
-pub fn generate_proof_package<C: ConstraintSynthesizer<Fr>>(
+pub fn generate_proof_package<C: ConstraintSynthesizer<Fr> + Clone>(
     proving_key: &ProvingKey<Bn254>,
     verifying_key: &VerifyingKey<Bn254>,
     circuit: C,
     public_inputs: &Vec<[u8; 32]>,
-) -> (ProofPackageLite, ProofPackagePrepared, ProofPackage) {
+) -> Result<(ProofPackageLite, ProofPackagePrepared, ProofPackage), ProofError> {
+    // Validate proving key matches circuit
+    validate_proving_key(proving_key, &circuit)?;
+    
+    // Validate public inputs
+    let public_inputs_fr: Vec<Fr> = public_inputs
+        .iter()
+        .map(validate_public_input)
+        .collect::<Result<Vec<_>, _>>()?;
+    
+    // Verify number of public inputs matches circuit expectations
+    let cs = ark_relations::r1cs::ConstraintSystem::<Fr>::new_ref();
+    circuit.clone().generate_constraints(cs.clone())
+        .map_err(|_| ProofError::CircuitValidationFailed)?;
+    
+    if public_inputs_fr.len() != cs.num_instance_variables() {
+        return Err(ProofError::InvalidPublicInput(
+            "Number of public inputs doesn't match circuit".to_string()
+        ));
+    }
+
     let rng = &mut thread_rng();
 
     // Create a proof
@@ -98,7 +161,7 @@ pub fn generate_proof_package<C: ConstraintSynthesizer<Fr>>(
     let mut prepared_verifying_key_bytes: Vec<u8> = Vec::new();
     let _ = prepared_verifying_key.serialize_uncompressed(&mut prepared_verifying_key_bytes);
 
-    (
+    Ok((
         ProofPackageLite {
             proof: proof_bytes.clone(),
             public_inputs: public_inputs.clone(),
@@ -114,5 +177,5 @@ pub fn generate_proof_package<C: ConstraintSynthesizer<Fr>>(
             public_inputs: g1_projective,
             prepared_verifying_key,
         },
-    )
+    ))
 }

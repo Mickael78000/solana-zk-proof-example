@@ -77,20 +77,26 @@ mod test {
     }
     
     #[tokio::test]
-    async fn test_verify_off_chain() -> Result<(), Box<dyn std::error::Error>> {
-        init();
-        // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
-        let circuit = ExampleCircuit::new(100, 50)?;
+async fn test_verify_off_chain() -> Result<(), Box<dyn std::error::Error>> {
+    init();
+    // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
+    let circuit = ExampleCircuit::new(100, 50)?;
 
-        let public_inputs = circuit.public_inputs()?;
+    let public_inputs = circuit.public_inputs()?;
 
-        let (proving_key, verifying_key) = setup(true, circuit.clone());
-        let (_, _, proof_package) = generate_proof_package(
-            &proving_key,
-            &verifying_key,
-            circuit.clone(),
-            &public_inputs,
-        );
+    let (proving_key, verifying_key) = setup(true, circuit.clone());
+    let proof_package = match generate_proof_package(
+        &proving_key,
+        &verifying_key,
+        circuit.clone(),
+        &public_inputs,
+    ) {
+        Ok((_, _, proof_package)) => proof_package,
+        Err(e) => {
+            info!("Failed to generate proof package: {:?}", e);
+            return Err(Box::new(e) as Box<dyn std::error::Error>);
+        }
+    };
 
         let verify_groth16_proof_result = verify_proof_package(&proof_package)?;
 
@@ -117,30 +123,36 @@ mod test {
         let program_id = Pubkey::from_str("9PMYmoKdNk67c9Gumo8WWNFpGwmmHfZ4BvFR2rh1winq").unwrap(); // Replace with your actual program ID
 
         // Generate the proof
-        // Create circuit with X=100, Y=50 to prove that 100 ≥ 50
         let circuit = ExampleCircuit::new(100, 50)?;
-
         let public_inputs = circuit.public_inputs()?;
         let (proving_key, verifying_key) = setup(true, circuit.clone());
-        let (_, _, proof_package) = generate_proof_package(
+        
+        let proof_package = match generate_proof_package(
             &proving_key,
             &verifying_key,
             circuit.clone(),
             &public_inputs,
-        );
+        ) {
+            Ok((_, _, proof_package)) => proof_package,
+            Err(e) => {
+                info!("Failed to generate proof package: {:?}", e);
+                return Err(Box::new(e) as Box<dyn std::error::Error>);
+            }
+        };
 
         let verifier_prepared = build_verifier(proof_package);
 
         // Serialize and encode the proof package
-        let instruction_data = to_vec(&ProgramInstruction::VerifyProof(verifier_prepared)).unwrap();
+        let instruction_data = to_vec(&ProgramInstruction::VerifyProof(verifier_prepared))?;
+        
         let instruction = Instruction::new_with_bytes(
             program_id,
-            instruction_data.as_slice(),
+            &instruction_data,
             vec![AccountMeta::new(payer.pubkey(), true)],
         );
 
         // Create and send the transaction
-        let recent_blockhash = client.get_latest_blockhash().await.unwrap();
+        let recent_blockhash = client.get_latest_blockhash().await?;
         let transaction = Transaction::new_signed_with_payer(
             &[instruction],
             Some(&payer.pubkey()),
@@ -311,6 +323,7 @@ mod test {
         // Print the input for debugging
         info!("Original input: {:?}", input);
 
+        
         let converted_input: Vec<u8> = input
             .chunks(ALT_BN128_PAIRING_ELEMENT_LEN)
             .flat_map(|chunk| {

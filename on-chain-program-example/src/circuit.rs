@@ -97,53 +97,70 @@ impl ConstraintSynthesizer<Fr> for ExampleCircuit {
         )?;
 
         // Optional range check (if enabled)
-        if self.range_check {
-            // Range check D to ensure 0 ≤ D < 2^32 (proving X ≥ Y)
-            // Ensure value < 2^32 using binary decomposition
-            let cur = d_var;
-            let mut acc_var = cs.new_witness_variable(|| Ok(Fr::zero()))?;
-            
-            for i in 0..32 {
-                // Create binary variable
-                let bit = cs.new_witness_variable(|| {
-                    Ok(if d.into_bigint().get_bit((i as u64).try_into().unwrap()) {
-                        Fr::one()
-                    } else {
-                        Fr::zero()
-                    })
-                })?;
+if self.range_check {
+    // Range check D to ensure 0 ≤ D < 2^32 (proving X ≥ Y)
+    let _cur = d_var;
+    let mut acc = Fr::zero();
+    let mut acc_var = cs.new_witness_variable(|| Ok(acc))?;
+    
+    for i in 0..32 {
+        // Create binary variable
+        let bit = cs.new_witness_variable(|| {
+            Ok(if d.into_bigint().get_bit((i as u64).try_into().unwrap()) {
+                Fr::one()
+            } else {
+                Fr::zero()
+            })
+        })?;
 
-                // Ensure bit is boolean (0 or 1)
-                cs.enforce_constraint(
-                    lc!() + bit,
-                    lc!() + bit,
-                    lc!() + bit,
-                )?;
+        // Ensure bit is boolean (0 or 1)
+        cs.enforce_constraint(
+            lc!() + bit,
+            lc!() + bit,
+            lc!() + bit,
+        )?;
 
-                // Add bit contribution to accumulator
-                if i > 0 {
-                    let power = Fr::from(1u64 << i);
-                    let new_acc = cs.new_witness_variable(|| Ok(power))?;
-                    
-                    // Constrain new_acc = acc_var + power
-                    cs.enforce_constraint(
-                        lc!() + acc_var + (power, Variable::One),
-                        lc!() + Variable::One,
-                        lc!() + new_acc,
-                    )?;
+        // Add bit contribution to accumulator
+        let power = Fr::from(1u64 << i);
+        let bit_contribution = cs.new_witness_variable(|| {
+            let bit_val = if d.into_bigint().get_bit((i as u64).try_into().unwrap()) {
+                Fr::one()
+            } else {
+                Fr::zero()
+            };
+            Ok(bit_val * power)
+        })?;
 
-                    // Constrain the bit decomposition
-                    cs.enforce_constraint(
-                        lc!() + cur - new_acc,
-                        lc!() + bit,
-                        lc!() + Variable::One,
-                    )?;
+        // Constrain bit_contribution = power * bit
+        cs.enforce_constraint(
+            lc!() + (power, Variable::One),
+            lc!() + bit,
+            lc!() + bit_contribution,
+        )?;
 
-                    acc_var = new_acc;
-                }
-            
-            }
+        // Update accumulator
+        if i > 0 {
+            acc = acc + (Fr::from(1u64 << (i-1)) * if d.into_bigint().get_bit(((i-1) as u64).try_into().unwrap()) { Fr::one() } else { Fr::zero() });
+            let new_acc = cs.new_witness_variable(|| Ok(acc))?;
+
+            // Constrain new_acc = acc_var + bit_contribution
+            cs.enforce_constraint(
+                lc!() + acc_var + bit_contribution,
+                lc!() + Variable::One,
+                lc!() + new_acc,
+            )?;
+
+            acc_var = new_acc;
         }
+    }
+
+    // Final constraint: ensure d_var equals the accumulated value
+    cs.enforce_constraint(
+        lc!() + acc_var,
+        lc!() + Variable::One,
+        lc!() + d_var,
+    )?;
+}
 
         Ok(())
     }

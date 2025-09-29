@@ -12,6 +12,30 @@ pub enum VerificationError {
     InvalidPublicInput,
     #[error("Verification failed")]
     VerificationFailed,
+    #[error("Invalid verifying key")]
+    InvalidVerifyingKey,
+    #[error("Input count mismatch")]
+    InputCountMismatch,
+}
+
+fn validate_verifying_key(vk: &VerifyingKey<Bn254>) -> Result<(), VerificationError> {
+    // Check that alpha_g1, beta_g2, and gamma_g2 are valid points
+    if !vk.alpha_g1.is_on_curve() || !vk.alpha_g1.is_in_correct_subgroup_assuming_on_curve() {
+        return Err(VerificationError::InvalidVerifyingKey);
+    }
+    if !vk.beta_g2.is_on_curve() || !vk.beta_g2.is_in_correct_subgroup_assuming_on_curve() {
+        return Err(VerificationError::InvalidVerifyingKey);
+    }
+    if !vk.gamma_g2.is_on_curve() || !vk.gamma_g2.is_in_correct_subgroup_assuming_on_curve() {
+        return Err(VerificationError::InvalidVerifyingKey);
+    }
+
+    // Validate delta_g2
+    if !vk.delta_g2.is_on_curve() || !vk.delta_g2.is_in_correct_subgroup_assuming_on_curve() {
+        return Err(VerificationError::InvalidVerifyingKey);
+    }
+
+    Ok(())
 }
 
 pub fn verify(
@@ -19,6 +43,8 @@ pub fn verify(
     public_inputs: &G1Projective,
     vk: &VerifyingKey<Bn254>,
 ) -> Result<bool, VerificationError> {
+    // Add this line at the start of the function
+    validate_verifying_key(vk)?;
     // Validate inputs
     if !is_valid_point(public_inputs) {
         return Err(VerificationError::InvalidPublicInput);
@@ -40,6 +66,12 @@ pub fn verify_proof_package(proof_package: &ProofPackage) -> Result<bool, Verifi
 
     if !is_valid_point(&proof_package.public_inputs) {
         return Err(VerificationError::InvalidPublicInput);
+    }
+
+     // Add this validation before the final verification
+    let pvk = &proof_package.prepared_verifying_key;
+    if pvk.vk.gamma_abc_g1.is_empty() {
+        return Err(VerificationError::InvalidVerifyingKey);
     }
 
     Groth16::<Bn254>::verify_proof_with_prepared_inputs(
