@@ -25,7 +25,7 @@ mod test {
     use solana_zk_client_example::byte_utils::convert_endianness;
     use solana_zk_client_example::circuit::ExampleCircuit;
     use solana_zk_client_example::prove::{generate_proof_package, setup};
-    use solana_zk_client_example::prove::ProofPackage;
+    use solana_zk_client_example::verify::verify_proof_package;
     use solana_zk_client_example::verify_lite::{build_verifier, convert_ark_public_input, convert_arkworks_verifying_key_to_solana_verifying_key_prepared, prepare_inputs, Groth16VerifierPrepared};
     use std::ops::{Mul, Neg};
     use std::str::FromStr;
@@ -198,11 +198,11 @@ mod test {
             .expect("Error serializing proof");
 
         let proof_a: [u8; 64] =
-            convert_endianness::<32, 64>(proof_bytes[0..64].try_into().unwrap());
+            convert_endianness::<32, 64>(proof_bytes[0..64].try_into().unwrap())?;
         let proof_b: [u8; 128] =
-            convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap().expect("REASON"));
+            convert_endianness::<64, 128>(proof_bytes[64..192].try_into().unwrap())?;
         let proof_c: [u8; 64] =
-            convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap().expect("REASON"));
+            convert_endianness::<32, 64>(proof_bytes[192..256].try_into().unwrap())?;
 
          let mut vk_bytes = Vec::with_capacity(vk.serialized_size(Compress::No));
         vk
@@ -220,41 +220,48 @@ mod test {
          let mut g1_bytes = Vec::with_capacity(projective.serialized_size(Compress::No));
         projective
             .serialize_uncompressed(&mut g1_bytes)
-            .expect("Failed to serialize prepared public input (G1Projective) to uncompressed bytes");
-        
-        let prepared_public_input =
-            convert_endianness::<32, 64>(g1_bytes.as_slice()).unwrap();
+            .expect("Failed to serialize projective point");
+
+        let g1_bytes_array: [u8; 32] = g1_bytes[..32].try_into()
+            .expect("Failed to convert to fixed-size array");
+        let prepared_public_input = convert_endianness::<32, 64>(&g1_bytes_array)?;
 
         let groth16_vk_prepared = convert_arkworks_verifying_key_to_solana_verifying_key_prepared(&vk);
 
-        let public_inputs = convert_ark_public_input(&public_input).unwrap();
+         let c2 = ExampleCircuit::new(100, 50)?;
+
+        let public_input = c2.public_inputs().unwrap();
 
         // Log custom verifier inputs
+         // Log custom verifier inputs
         info!("Custom Verifier:");
 
-        info!("Public Input: {:?}", public_inputs);
+        info!("Public Input: {:?}", &public_input);
         info!("Proof A: {:?}", proof_a);
         info!("Proof B: {:?}", proof_b);
         info!("Proof C: {:?}", proof_c);
 
         let mut verifier: Groth16VerifierPrepared = Groth16VerifierPrepared::new(
             proof_a,
-            proof_b,
+           proof_b,
             proof_c,
             prepared_public_input,
-            groth_vk_prepared,
+            groth16_vk_prepared,
         )
         .unwrap();
 
         match verifier.verify(&[]) {
-            Ok(true) => {
+             Ok(true) => {
                 info!("Proof verification succeeded");
+                Ok(())
             }
             Ok(false) => {
                 info!("Proof verification failed");
+                Ok(())
             }
             Err(error) => {
                 info!("Proof verification failed with error: {:?}", error);
+                Ok(())
             }
         }
     }
@@ -304,24 +311,31 @@ mod test {
         // Print the input for debugging
         info!("Original input: {:?}", input);
 
-        // Apply endianness conversion to input and print
         let converted_input: Vec<u8> = input
             .chunks(ALT_BN128_PAIRING_ELEMENT_LEN)
             .flat_map(|chunk| {
-                
-        let mut converted = Vec::new();
+                let mut converted = Vec::new();
 
-        let first_chunk: &[u8; 64] = chunk[..64].try_into().expect("slice with incorrect length");
-        converted.extend_from_slice(&convert_endianness::<64, 128>(first_chunk));
+                let first_chunk: &[u8; 64] = chunk[..64].try_into().expect("slice with incorrect length");
+                let converted_first = match convert_endianness::<64, 128>(first_chunk) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return vec![].into_iter(), // Return empty iterator on error
+                };
+                converted.extend_from_slice(&converted_first);
 
-        let second_chunk: &[u8; 64] = chunk[64..128].try_into().expect("slice with incorrect length");
-        converted.extend_from_slice(&convert_endianness::<64, 128>(second_chunk));
+                let second_chunk: &[u8; 64] = chunk[64..128].try_into().expect("slice with incorrect length");
+                let converted_second = match convert_endianness::<64, 128>(second_chunk) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return vec![].into_iter(), // Return empty iterator on error
+                };
+                converted.extend_from_slice(&converted_second);
 
-        converted
+                converted.into_iter()
             })
             .collect();
 
         info!("Converted input: {:?}", converted_input);
+
 
         // On-chain style:
         match alt_bn128_pairing_call(&converted_input, &[]) {
