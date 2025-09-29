@@ -138,20 +138,61 @@ if self.range_check {
             lc!() + bit_contribution,
         )?;
 
-        // Update accumulator
-        if i > 0 {
-            acc = acc + (Fr::from(1u64 << (i-1)) * if d.into_bigint().get_bit(((i-1) as u64).try_into().unwrap()) { Fr::one() } else { Fr::zero() });
+        
+        // Range check D to ensure 0 ≤ D < 2^32 (proving X ≥ Y)
+        let mut acc = Fr::zero();
+        let mut acc_var = cs.new_witness_variable(|| Ok(acc))?;
+        let mut prev_acc_var = acc_var;
+
+        for i in 0..32 {
+            // Create binary variable for current bit
+            let bit = cs.new_witness_variable(|| {
+                Ok(if d.into_bigint().get_bit(i.try_into().unwrap()) {
+                    Fr::one()
+                } else {
+                    Fr::zero()
+                })
+            })?;
+
+            // Ensure bit is boolean (0 or 1)
+            cs.enforce_constraint(
+                lc!() + bit,
+                lc!() + bit,
+                lc!() + bit,
+            )?;
+
+            // Calculate bit contribution: 2^i * bit
+            let power = Fr::from(1u64 << i);
+            let bit_contribution = cs.new_witness_variable(|| Ok(power * if d.into_bigint().get_bit(i.try_into().unwrap()) { Fr::one() } else { Fr::zero() }))?;
+
+            // Constrain bit_contribution = power * bit
+            cs.enforce_constraint(
+                lc!() + (power, Variable::One),
+                lc!() + bit,
+                lc!() + bit_contribution,
+            )?;
+
+            // Update accumulator with new bit contribution
+            acc = acc + (power * if d.into_bigint().get_bit(i.try_into().unwrap()) { Fr::one() } else { Fr::zero() });
             let new_acc = cs.new_witness_variable(|| Ok(acc))?;
 
-            // Constrain new_acc = acc_var + bit_contribution
+            // Constrain new_acc = prev_acc + bit_contribution
             cs.enforce_constraint(
-                lc!() + acc_var + bit_contribution,
+                lc!() + prev_acc_var + bit_contribution,
                 lc!() + Variable::One,
                 lc!() + new_acc,
             )?;
 
+            prev_acc_var = new_acc;
             acc_var = new_acc;
         }
+
+        // Final constraint: ensure d_var equals the accumulated value
+        cs.enforce_constraint(
+            lc!() + d_var,
+            lc!() + Variable::One,
+            lc!() + acc_var,
+        )?;
     }
 
     // Final constraint: ensure d_var equals the accumulated value

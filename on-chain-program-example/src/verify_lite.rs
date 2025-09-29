@@ -268,7 +268,7 @@ pub fn build_verifier(proof_package: ProofPackage) -> Groth16VerifierPrepared {
 }
 
 pub fn is_less_than_bn254_field_size_be(bytes: &[u8; 32]) -> bool {
-    let bigint = BigUint::from_bytes_le(bytes);
+    let bigint = BigUint::from_bytes_be(bytes);
     bigint < ark_bn254::Fr::MODULUS.into()
 }
 
