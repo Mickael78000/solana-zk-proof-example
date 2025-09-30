@@ -24,4 +24,5 @@ log = "0.4"
 env_logger = "0.10"
 thiserror = "1.0"
 anchor-client = "0.31.1"
-
+commit-reveal-dapp = { path = "../solana-commit-reveal/commit-reveal-dapp/programs/commit-reveal-dapp", features = ["cpi"] }
+sha2 = "0.10"
