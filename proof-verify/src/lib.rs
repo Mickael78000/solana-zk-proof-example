@@ -1,7 +1,15 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
-    account_info::AccountInfo, entrypoint, entrypoint::ProgramResult, instruction::Instruction,
-    msg, program::invoke, program_error::ProgramError, pubkey::Pubkey,
+    account_info::AccountInfo, 
+    entrypoint, 
+    entrypoint::ProgramResult, 
+    instruction::Instruction,
+    msg, 
+    program::invoke, 
+    program_error::ProgramError, 
+    pubkey::Pubkey,
+    clock::Clock,
+    sysvar::Sysvar,
 };
 use thiserror::Error;
 
@@ -47,7 +55,15 @@ fn verify_proof(accounts: &[AccountInfo], mut groth16_verifier_prepared: Groth16
 
     if result {
         msg!("Proof is valid! Inputs verified.");
-        update_on_chain_state()?;
+        
+        // Update state if a state account is provided
+        if accounts.is_empty() {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+        update_on_chain_state_with_amount(
+            &accounts[0], 
+            &groth16_verifier_prepared.prepared_public_inputs
+        )?;
         Ok(())
     } else {
         msg!("Proof is invalid!");
@@ -77,7 +93,16 @@ fn verify_proof_with_balance(
 
         if account_balance >= required_balance {
             msg!("Account balance is sufficient.");
-            update_on_chain_state()?;
+            
+            // Update state if a state account is provided (first account)
+            if !accounts.is_empty() {
+                update_on_chain_state_with_amount(
+                    &accounts[0], 
+                    &groth16_verifier_prepared.prepared_public_inputs
+                )?;
+            } else {
+                update_on_chain_state()?;
+            }
             Ok(())
         } else {
             msg!("Account balance is insufficient.");
@@ -102,12 +127,41 @@ pub struct Groth16VerifyingKeyPrepared {
     pub vk_delta_g2: [u8; 128],
 }
 
+/// Verification State - Tracks proof verification history
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct VerificationState {
+    pub total_verifications: u64,
+    pub last_amount: [u8; 32],  // Last verified tokens_asked value
+    pub last_timestamp: i64,
+}
+
+impl VerificationState {
+    pub const LEN: usize = 8 + 32 + 8;
+}
+
+fn update_on_chain_state_with_amount(
+    account: &AccountInfo,
+    amount: &[u8; 64],
+) -> ProgramResult {
+    let mut data = account.try_borrow_mut_data()?;
+    let mut state = VerificationState::try_from_slice(&data)?;
+    
+    state.total_verifications += 1;
+    state.last_amount.copy_from_slice(&amount[..32]);
+    state.last_timestamp = Clock::get()?.unix_timestamp;
+    
+    state.serialize(&mut &mut data[..])?;
+    
+    msg!("Verification #{}: Amount verified", state.total_verifications);
+    Ok(())
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Groth16VerifierPrepared {
     proof_a: [u8; 64],
     proof_b: [u8; 128],
     proof_c: [u8; 64],
-    prepared_public_inputs: [u8; 64],
+    pub prepared_public_inputs: [u8; 64],  // Made public for state updates
     verifying_key: Box<Groth16VerifyingKeyPrepared>,
 }
 
@@ -116,7 +170,7 @@ impl Groth16VerifierPrepared {
         proof_a: &[u8],
         proof_b: &[u8],
         proof_c: &[u8],
-        prepared_public_inputs: &[u8],
+        prepared_public_inputs: &[u8],  // ✅ Just the parameter name
         verifying_key: Box<Groth16VerifyingKeyPrepared>,
     ) -> Result<Self, Groth16Error> {
         if proof_a.len() != 64 {
