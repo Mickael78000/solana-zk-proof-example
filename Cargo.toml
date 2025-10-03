@@ -1,10 +1,11 @@
 [workspace]
 members = [
-     "solana-commit-reveal/commit-reveal-dapp/programs/commit-reveal-dapp",
+    "solana-commit-reveal/commit-reveal-dapp/programs/commit-reveal-dapp",
     "proof-verify",
     "dex-router/programs/dex-solana",
     "integration-tests",
-    "on-chain-program-example"
+    "on-chain-program-example",
+    "zk-elgamal-proof"
 ]
 resolver = "2"
 

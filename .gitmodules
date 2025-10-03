@@ -5,5 +5,5 @@
 	path = libs/escrow
 	url = https://github.com/mikemaccana/anchor-escrow-2025.git
 [submodule "zk-elgamal-proof"]
-  path = zk-elgamal-proof
-  url = https://github.com/solana-labs/zk-elgamal-proof.git
+  	path = zk-elgamal-proof
+ 	url = https://github.com/solana-program/zk-elgamal-proof  # Exemple à adapter
