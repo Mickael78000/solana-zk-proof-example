@@ -1,3 +1,6 @@
 [submodule "dex-router"]
 	path = dex-router
 	url = https://github.com/Mickael78000/DEX-Router-Solana-V1.git
+[submodule "libs/escrow"]
+	path = libs/escrow
+	url = https://github.com/mikemaccana/anchor-escrow-2025.git
