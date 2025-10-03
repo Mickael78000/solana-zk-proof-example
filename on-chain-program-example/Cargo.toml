@@ -26,5 +26,5 @@ thiserror = "1.0.63"
 hex = "0.4.3"
 log = "0.4.22"
 env_logger = "0.9.3"
-solana-zk-sdk = { path = "../../zk-elgamal-proof/zk-sdk/" }
+solana-zk-sdk = { path = "../zk-elgamal-proof/zk-sdk/" }
 solana-commitment-config = "3.0.0"
