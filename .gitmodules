@@ -4,3 +4,6 @@
 [submodule "libs/escrow"]
 	path = libs/escrow
 	url = https://github.com/mikemaccana/anchor-escrow-2025.git
+[submodule "zk-elgamal-proof"]
+  path = zk-elgamal-proof
+  url = <URL_DU_REPOSITOIRE_ZK-ELGAMAL-PROOF>
