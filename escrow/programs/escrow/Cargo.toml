@@ -1,0 +1,37 @@
+[package]
+name = "escrow"
+version = "1.0.0"
+description = "A working minimal Anchor Escrow app with ZK privacy features"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "escrow"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = "0.31.1"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+rand = "0.8"
+litesvm = "0.6.1"
+solana-account = "2.2.1"
+solana-instruction = "2.2.1"
+solana-keypair = "2.2.1"
+solana-message = "2.2.1"
+solana-pubkey = "2.2.1"
+solana-signer = "2.2.1"
+solana-transaction = "2.2.1"
+solana-system-program = "2.2.1"
+spl-associated-token-account = "6.0.0"
+spl-token = "7.0.0"
+solana-kite = "0.1.0"

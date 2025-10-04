@@ -1,0 +1,107 @@
+# From https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs#using-the-nodejs-starter-workflow
+name: Builds and passes tests with 0 warnings or errors
+
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+    branches: [main, next]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # RUSTUP_TOOLCHAIN is needed for consistent builds per
+    # https://solana.stackexchange.com/questions/21664/why-is-the-same-commit-of-an-anchor-repo-giving-different-results-when-run-at-di
+    # TODO: remove when no longer necessary
+    env:
+      RUSTUP_TOOLCHAIN: "nightly-2025-04-16"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: metaDAOproject/setup-anchor@v3.1
+        with:
+          anchor-version: "0.31.1"
+          solana-cli-version: "2.1.21"
+          node-version: "22.14.0"
+
+      # Pre-install the Rust toolchain to avoid installation messages during version checks
+      # https://solana.stackexchange.com/questions/21664/why-is-the-same-commit-of-an-anchor-repo-giving-different-results-when-run-at-di
+      # TODO: remove when no longer necessary
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install $RUSTUP_TOOLCHAIN
+          rustup component add --toolchain $RUSTUP_TOOLCHAIN cargo clippy rust-docs rust-std rustc rustfmt
+
+      # Fix for https://github.com/solana-foundation/anchor/issues/3596
+      # TODO: Remove this once the issue is fixed
+      - name: Manually download Anchor binary
+        run: |
+          wget https://github.com/coral-xyz/anchor/releases/download/v0.31.1/anchor-0.31.1-x86_64-unknown-linux-gnu
+          chmod +x anchor-0.31.1-x86_64-unknown-linux-gnu
+          mv anchor-0.31.1-x86_64-unknown-linux-gnu `which anchor`
+
+      # Pre-download Cargo dependencies to avoid messages during version checks
+      - name: Pre-download dependencies
+        run: |
+          echo "----------------------------------------"
+          echo "Pre-downloading Cargo dependencies..."
+          cargo fetch
+          cargo build-sbf --version &> /dev/null || true
+
+      # git will keep outputting:
+      #   hint: Using 'master' as the name for the initial branch. This default branch name
+      #   hint: is subject to change.
+      # Unless we set this.
+      - name: Set a default branch name for git
+        run: |
+          git config --global init.defaultBranch main
+
+      # Fixes:
+      #   Error: Unable to read keypair file
+      # during 'anchor test'
+      # Hide the output of the command to avoid cluttering the logs
+      - name: Make a default keypair
+        run: |
+          solana-keygen new --no-bip39-passphrase &> /dev/null
+
+      - name: Show versions
+        run: |
+          echo "----------------------------------------"
+          echo "Showing versions..."
+          npm run show-versions
+
+      - name: Install packages
+        run: |
+          echo "----------------------------------------"
+          echo "Installing packages..."
+          npm i
+
+      - name: Build the project
+        run: |
+          echo "----------------------------------------"
+          echo "Running 'anchor build'..."
+          anchor build 2>&1 | tee -a build.log
+
+      - name: Run tests (TypeScript)
+        run: |
+          echo "----------------------------------------"
+          echo "Running 'anchor test'..."
+          anchor test 2>&1 | tee -a build.log
+
+      - name: Run tests (Rust)
+        run: |
+          echo "----------------------------------------"
+          echo "Running LiteSVM tests..."
+          cd programs/escrow
+          cargo test 2>&1 | tee -a build.log
+
+      - name: Check for any errors or warnings
+        run: |
+          echo "----------------------------------------"
+          echo "build.log..."
+          cat build.log
+          echo "----------------------------------------"
+          echo "Checking for errors or warnings in build.log..."
+          grep -qiEvz 'error:|warning:|failed' build.log
+          echo $?
